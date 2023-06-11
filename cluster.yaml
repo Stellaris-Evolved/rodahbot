@@ -1,0 +1,84 @@
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.nano
+      ImageId: ami-04a0ae173da5807d3
+      KeyName: RodahbotKeyPair
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install required dependencies
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+
+          # Fetch your bot code from GitHub
+          git clone <your GitHub repository URL>
+          
+          cd rodahbot
+          pip3 install -r requirements.txt
+
+          python3 discord_bot.py
+      SecurityGroups:
+        - Ref: "RodahbotSecurityGroup"
+
+  RodahbotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Discord bot
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0 # Replace with a more specific IP range if desired
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0 # Replace with a more specific IP range if desired
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  RodahbotEC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: "RodahbotIAMRole"
+
+  RodahbotIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: MyEC2Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:*
+                Resource: "*"
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                Resource: "arn:aws:dynamodb:us-east-1:718675342327:table/word_count"

@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "rodahbot"
+version = "0.1.0"
+description = ""
+authors = ["adriangaro <garovat.adrian@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+boto3 = "^1.26.151"
+discord-py-slash-command = "^4.2.1"
+py-cord = "^2.4.1"
+python-dotenv = "^1.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
