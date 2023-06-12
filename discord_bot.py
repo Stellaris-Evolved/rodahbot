@@ -91,23 +91,24 @@ def create_table_if_not_exists():
 
 
 async def fetch_and_populate_table():
-    guild = bot.get_guild(GUILD_ID)  # Replace with your guild ID
-    count = 0
-    for channel in guild.channels:
-        print(channel.name)
-        if isinstance(channel, discord.TextChannel):
-            async for message in channel.history(limit=None):
-                count = count_words(message.content)
-
-    dynamodb.update_item(
-        TableName=TABLE_NAME,
-        Key={'id': {'S': 'total_count'}},
-        UpdateExpression='SET message_count = if_not_exists(message_count, :zero) + :val',
-        ExpressionAttributeValues={
-            ':zero': {'N': '0'},
-            ':val': {'N': str(count)}
-        }
-    )
+    pass
+    # guild = bot.get_guild(GUILD_ID)  # Replace with your guild ID
+    # count = 0
+    # for channel in guild.channels:
+    #     print(channel.name)
+    #     if isinstance(channel, discord.TextChannel):
+    #         async for message in channel.history(limit=None):
+    #             count = count_words(message.content)
+    #
+    # dynamodb.update_item(
+    #     TableName=TABLE_NAME,
+    #     Key={'id': {'S': 'total_count'}},
+    #     UpdateExpression='SET message_count = if_not_exists(message_count, :zero) + :val',
+    #     ExpressionAttributeValues={
+    #         ':zero': {'N': '0'},
+    #         ':val': {'N': str(count)}
+    #     }
+    # )
 
 
 def count_words(message: str):
