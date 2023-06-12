@@ -1,4 +1,7 @@
 import json
+import re
+from datetime import datetime
+from time import sleep
 
 import boto3
 import discord
@@ -34,87 +37,51 @@ def get_secret():
 
 # Discord bot token
 DISCORD_TOKEN = get_secret()['DISCORD_TOKEN']
-print(DISCORD_TOKEN)
 # AWS DynamoDB client
 dynamodb = boto3.client('dynamodb')
-
 # Initialize the Discord bot
-bot = commands.Bot(command_prefix='/')
+bot = commands.Bot(command_prefix='/', intents=discord.Intents.all())
 
 # Define the set of words to count
-words_to_count = ['bio hive', 'biohive', 'bio-hive', 'bio_hive']
+
+words = ['biohive', 'bioswarm', 'biologicalhive', 'biologicalhivemind',
+         'biologicalswarm']
+word_regex = re.compile(
+    '|'.join([
+        '(' + word + ')'
+        for word in words
+    ]),  re.A | re.I
+)
+
 TABLE_NAME = 'word_counts'
 GUILD_ID = 871511987677442151
-print(bot.get_guild(GUILD_ID))
-
 
 @bot.event
 async def on_ready():
     print(f'Bot connected as {bot.user.name}')
-
-
-@bot.event
-async def on_message(message):
-    # Ignore messages sent by the bot itself
-    if message.author == bot.user:
-        return
-
-    # Update the DynamoDB table with the word counts and message IDs
-    for word in words_to_count:
-        count = message.content.lower().count(word)
-        if count > 0:
-            response = dynamodb.update_item(
-                TableName=TABLE_NAME,
-                Key={'word': {'S': 'biohive'}},
-                # Using 'biohive' as the key for all variations
-                UpdateExpression='SET #messages.#message_id = if_not_exists(#messages.#message_id, :zero) + :val',
-                ExpressionAttributeNames={
-                    '#messages': 'messages',
-                    '#message_id': str(message.id),
-                },
-                ExpressionAttributeValues={
-                    ':zero': {'N': '0'},
-                    ':val': {'N': str(count)},
-                }
-            )
-
-    # React to the message with a thumbs-up emoji
-    await message.add_reaction('\U0001F44D')
-
-
-@bot.slash_command(name='biohive-when')
-async def biohive_when(ctx):
-    # Retrieve the word counts from the DynamoDB table
-    response = dynamodb.scan(TableName=TABLE_NAME)
-    items = response.get('Items', [])
-
-    # Create a response message with the word counts and message IDs
-    counts = 0
-    for item in items:
-        messages = item.get('messages', {})
-        for message_id, cnt in messages.items():
-            counts += cnt["N"]
-
-    # Send the response message
-    await ctx.send(f"Biohive has been delayed {counts} weeks!")
+    create_table_if_not_exists()
+    await fetch_and_populate_table()
 
 
 # Create DynamoDB table if it doesn't exist
 def create_table_if_not_exists():
     try:
-        dynamodb.create_table(
+        response = dynamodb.create_table(
             TableName=TABLE_NAME,
             KeySchema=[
-                {'AttributeName': 'word', 'KeyType': 'HASH'}
+                {'AttributeName': 'id', 'KeyType': 'HASH'}
             ],
             AttributeDefinitions=[
-                {'AttributeName': 'word', 'AttributeType': 'S'}
+                {'AttributeName': 'id', 'AttributeType': 'S'}
             ],
             ProvisionedThroughput={
                 'ReadCapacityUnits': 5,
                 'WriteCapacityUnits': 5
             }
         )
+
+        sleep(3)
+
     except ClientError as e:
         if e.response['Error']['Code'] == 'ResourceInUseException':
             # Table already exists
@@ -125,43 +92,84 @@ def create_table_if_not_exists():
 
 async def fetch_and_populate_table():
     guild = bot.get_guild(GUILD_ID)  # Replace with your guild ID
-
+    count = 0
     for channel in guild.channels:
+        print(channel.name)
         if isinstance(channel, discord.TextChannel):
             async for message in channel.history(limit=None):
-                process_message(message)
+                count = count_words(message.content)
+
+    dynamodb.update_item(
+        TableName=TABLE_NAME,
+        Key={'id': {'S': 'total_count'}},
+        UpdateExpression='SET message_count = if_not_exists(message_count, :zero) + :val',
+        ExpressionAttributeValues={
+            ':zero': {'N': '0'},
+            ':val': {'N': str(count)}
+        }
+    )
+
+
+def count_words(message: str):
+    return len(re.findall(word_regex, ''.join(filter(str.isalnum, message))))
 
 
 # Process a message and update the table
-def process_message(message):
+def process_message(message: discord.Message):
     # Normalize and count the occurrences of words in the message
-    word_counts = {}
-    for word in words_to_count:
-        count = message.content.lower().count(word)
-        if count > 0:
-            if word in word_counts:
-                word_counts[word] += count
-            else:
-                word_counts[word] = count
+    count = count_words(message.content)
 
-    # Calculate the total count for all word variations
-    total_count = sum(word_counts.values())
+    if count:
+        print(message.content)
+        # Update the table with the total count for all word variations
+        dynamodb.update_item(
+            TableName=TABLE_NAME,
+            Key={'id': {'S': 'total_count'}},
+            UpdateExpression='SET total_count = if_not_exists(total_count, :zero) + :val',
+            ExpressionAttributeValues={
+                ':zero': {'N': '0'},
+                ':val': {'N': str(count)}
+            }
+        )
 
-    # Update the table with the total count for all word variations
-    response = dynamodb.update_item(
-        TableName=TABLE_NAME,
-        Key={'word': {'S': 'total_count'}},
-        UpdateExpression='ADD message_ids :id SET #count = #count + :count',
-        ExpressionAttributeNames={'#count': 'count'},
-        ExpressionAttributeValues={
-            ':id': {'SS': [message.id]},
-            ':count': {'N': str(total_count)}
-        },
-        ReturnValues='ALL_NEW'
-    )
 
-    # Print the updated item
-    print(response['Attributes'])
+@bot.event
+async def on_message(message: discord.Message):
+    # Ignore messages sent by the bot itself
+    if message.author == bot.user:
+        return
+    count = count_words(message.content)
+
+    if count > 0:
+        print(message)
+        response = dynamodb.update_item(
+            TableName=TABLE_NAME,
+            Key={'id': {'S': 'total_count'}},
+            UpdateExpression='SET total_count = if_not_exists(total_count, :zero) + :val',
+            ExpressionAttributeValues={
+                ':zero': {'N': '0'},
+                ':val': {'N': str(count)}
+            }
+        )
+
+        # React to the message with a thumbs-up emoji
+        await message.add_reaction("<:when:962431720660025354>")
+    if 'when' in message.content and count:
+        response = dynamodb.scan(TableName=TABLE_NAME)
+        counts = response.get('Items', [])[0]['total_count']['N']
+
+        # Send the response message
+        await message.channel.send(f"Biohive has been delayed {counts} weeks!")
+
+
+@bot.slash_command(name='biohive-when')
+async def biohive_when(ctx: discord.ApplicationContext):
+    # Retrieve the word counts from the DynamoDB table
+    response = dynamodb.scan(TableName=TABLE_NAME)
+    counts = response.get('Items', [])[0]['total_count']['N']
+
+    # Send the response message
+    await ctx.respond(f"Biohive has been delayed {counts} weeks!")
 
 
 bot.run(DISCORD_TOKEN)

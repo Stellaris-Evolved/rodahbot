@@ -1,5 +1,5 @@
 Resources:
-  MyEC2Instance:
+  RodahbotEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.nano
@@ -7,25 +7,62 @@ Resources:
       KeyName: RodahbotKeyPair
       UserData:
         Fn::Base64: !Sub |
-          #!/bin/bash
-          # Install required dependencies
+          #!/bin/bash -xe
           sudo apt-get update
           sudo apt-get install -y python3-pip
-
-          # Fetch your bot code from GitHub
-          git clone <your GitHub repository URL>
-          
+          git clone git@github.com:Stellaris-Evolved/rodahbot.git
           cd rodahbot
           pip3 install -r requirements.txt
-
           python3 discord_bot.py
-      SecurityGroups:
-        - Ref: "RodahbotSecurityGroup"
+      SubnetId: !Ref RodahbotSubnet
+      SecurityGroupIds:
+        - !Ref RodahbotSecurityGroup
+          
+  RodahbotVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  RodahbotInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  RodahbotVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref RodahbotVPC
+      InternetGatewayId: !Ref RodahbotInternetGateway
+
+  RodahbotSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RodahbotVPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: us-east-1a
+
+  RodahbotRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RodahbotVPC
+
+  RodahbotRoute:
+    Type: AWS::EC2::Route
+    DependsOn: RodahbotVPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RodahbotRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref RodahbotInternetGateway
+
+  RodahbotSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref RodahbotSubnet
+      RouteTableId: !Ref RodahbotRouteTable
 
   RodahbotSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for the Discord bot
+      GroupDescription: Security group for the Rodahbot Discord bot
+      VpcId: !Ref RodahbotVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -52,7 +89,7 @@ Resources:
   RodahbotIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: MyEC2Role
+      RoleName: RodahbotEC2Role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -82,3 +119,14 @@ Resources:
                   - dynamodb:Scan
                   - dynamodb:Query
                 Resource: "arn:aws:dynamodb:us-east-1:718675342327:table/word_count"
+
+  RodahbotElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  RodahbotEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt RodahbotElasticIP.AllocationId
+      InstanceId: !Ref RodahbotEC2Instance
