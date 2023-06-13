@@ -58,7 +58,6 @@ GUILD_ID = 871511987677442151
 
 @bot.event
 async def on_ready():
-    print(f'Bot connected as {bot.user.name}')
     create_table_if_not_exists()
     await fetch_and_populate_table()
 

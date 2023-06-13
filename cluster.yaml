@@ -8,8 +8,7 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
+          sudo yup install -y python3-pip git
           git clone git@github.com:Stellaris-Evolved/rodahbot.git
           cd rodahbot
           pip3 install -r requirements.txt
@@ -77,8 +76,11 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0 # Replace with a more specific IP range if desired
       SecurityGroupEgress:
-        - IpProtocol: -1
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
           CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
 
   RodahbotEC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
